@@ -20,6 +20,17 @@ from django.utils.timezone import now
 
 from .models import Mailbox, EmailMessage
 
+# 月份英文缩写映射（独立于系统 locale，IMAP SINCE 必须用英文缩写）
+_MONTH_NAMES = [
+    '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]
+
+
+def _imap_since_date(dt):
+    """生成 IMAP SINCE 日期字符串，不依赖系统 locale"""
+    return f'{dt.day:02d}-{_MONTH_NAMES[dt.month]}-{dt.year}'
+
 
 def parse_subject(raw_subject: str) -> str:
     """解析邮件主题，处理 =?UTF-8?B?...?= 等编码"""
@@ -244,20 +255,23 @@ def sync_mailbox(mailbox: Mailbox) -> dict:
                             if addr:
                                 recipients.append(decode_address(addr))
 
-                    EmailMessage.objects.create(
-                        mailbox=mailbox,
+                    _, created = EmailMessage.objects.get_or_create(
                         message_id=message_id,
-                        uid=str(i),
-                        subject=subject[:500],
-                        sender=decode_address(sender_raw[:300]),
-                        sender_email=sender_email,
-                        recipients=json.dumps(recipients),
-                        received_at=received_at,
-                        body_text=body_text,
-                        body_html=body_html,
-                        has_attachments=False,
+                        defaults={
+                            'mailbox': mailbox,
+                            'uid': str(i),
+                            'subject': subject[:500],
+                            'sender': decode_address(sender_raw[:300]),
+                            'sender_email': sender_email,
+                            'recipients': json.dumps(recipients),
+                            'received_at': received_at,
+                            'body_text': body_text,
+                            'body_html': body_html,
+                            'has_attachments': False,
+                        },
                     )
-                    new_count += 1
+                    if created:
+                        new_count += 1
                 except Exception as e:
                     errors.append(f"MSG {i}: {e}")
                     continue
@@ -296,21 +310,25 @@ def sync_mailbox(mailbox: Mailbox) -> dict:
                 err_msg = data[0].decode('utf-8', errors='ignore') if isinstance(data[0], bytes) else str(data[0])
                 raise imaplib.IMAP4.error(f"SELECT INBOX 失败: {err_msg}")
 
-            # 构造搜索条件
+            # 构造搜索条件（使用 UID SEARCH，不依赖 locale）
             if mailbox.last_sync_at:
-                since_date = mailbox.last_sync_at.strftime('%d-%b-%Y')
+                since_date = _imap_since_date(mailbox.last_sync_at)
             else:
-                since_date = datetime.now().strftime('%d-%b-%Y')
+                since_date = _imap_since_date(datetime.now())
 
-            _, search_data = conn.search(None, f'(SINCE {since_date})')
-            uid_list = search_data[0].split()
+            # 使用 UID 模式搜索/拉取，确保 UID 稳定
+            _, search_data = conn.uid('SEARCH', None, f'(SINCE {since_date})')
+            uid_list = search_data[0].split() if search_data[0] else []
 
         new_count = 0
         errors = []
 
         for uid in uid_list:
             try:
-                _, data = conn.fetch(uid, '(RFC822 FLAGS)')
+                # 使用 UID FETCH 拉取邮件
+                _, data = conn.uid('FETCH', uid, '(RFC822 FLAGS)')
+                if not data or not data[0]:
+                    continue
                 msg_bytes = data[0][1]
                 msg = email.message_from_bytes(msg_bytes)
 
@@ -319,9 +337,7 @@ def sync_mailbox(mailbox: Mailbox) -> dict:
                 if not message_id:
                     continue
 
-                # 去重
-                if EmailMessage.objects.filter(message_id=message_id).exists():
-                    continue
+                # 去重（get_or_create 配合 unique 约束，消除并发竞态）
 
                 # 解析
                 subject = parse_subject(msg.get('Subject', ''))
@@ -346,20 +362,24 @@ def sync_mailbox(mailbox: Mailbox) -> dict:
                         if addr:
                             recipients.append(decode_address(addr))
 
-                EmailMessage.objects.create(
-                    mailbox=mailbox,
+                uid_val = uid.decode() if isinstance(uid, bytes) else uid
+                _, created = EmailMessage.objects.get_or_create(
                     message_id=message_id,
-                    uid=uid.decode() if isinstance(uid, bytes) else uid,
-                    subject=subject[:500],
-                    sender=decode_address(sender_raw[:300]),
-                    sender_email=sender_email,
-                    recipients=json.dumps(recipients),
-                    received_at=received_at,
-                    body_text=body_text,
-                    body_html=body_html,
-                    has_attachments=False,
+                    defaults={
+                        'mailbox': mailbox,
+                        'uid': uid_val,
+                        'subject': subject[:500],
+                        'sender': decode_address(sender_raw[:300]),
+                        'sender_email': sender_email,
+                        'recipients': json.dumps(recipients),
+                        'received_at': received_at,
+                        'body_text': body_text,
+                        'body_html': body_html,
+                        'has_attachments': False,
+                    },
                 )
-                new_count += 1
+                if created:
+                    new_count += 1
 
             except Exception as e:
                 errors.append(f"UID {uid}: {e}")

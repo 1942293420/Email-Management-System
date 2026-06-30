@@ -13,21 +13,19 @@ import django
 django.setup()
 
 from mailboxes.models import Mailbox
-from mailboxes.imap_sync import sync_mailbox
-from mailboxes.views import push_mail_notification
+from mailboxes.views import do_sync_and_log
 
 now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 print(f'[{now}] 开始邮箱同步...')
 
 results = []
 for mailbox in Mailbox.objects.filter(is_active=True):
-    result = sync_mailbox(mailbox)
-    if result['new'] > 0:
-        push_mail_notification(mailbox.id, mailbox.name, result['new'])
+    result = do_sync_and_log(mailbox, push=True)
     results.append({
         'mailbox': mailbox.email,
-        'new': result['new'],
-        'error': result['error'],
+        'new': result.get('new', 0),
+        'error': result.get('error'),
+        'duration_ms': result.get('duration_ms', 0),
     })
 
 # 统计

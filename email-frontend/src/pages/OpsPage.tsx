@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { FiActivity, FiCheckCircle, FiXCircle, FiClock, FiRefreshCw, FiMail, FiServer } from 'react-icons/fi'
 import { useNavigate, useLocation } from 'react-router-dom'
 
-const API_BASE = 'http://192.168.1.135:9122/api'
+const API_BASE = '/api'
 
 interface SyncLogItem {
   id: number

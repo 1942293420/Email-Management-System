@@ -44,7 +44,7 @@ class EmailMessage(models.Model):
     mailbox = models.ForeignKey(Mailbox, on_delete=models.CASCADE, related_name='emails')
 
     # IMAP 唯一标识 — 用于去重
-    message_id = models.CharField(max_length=500, db_index=True)
+    message_id = models.CharField(max_length=500, unique=True)
     uid = models.CharField(max_length=50, blank=True, help_text='IMAP UID')
 
     subject = models.CharField(max_length=500, blank=True)
@@ -69,7 +69,6 @@ class EmailMessage(models.Model):
         verbose_name_plural = '邮件'
         indexes = [
             models.Index(fields=['mailbox', '-received_at']),
-            models.Index(fields=['message_id']),
         ]
 
     def __str__(self):

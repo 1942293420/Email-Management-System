@@ -10,6 +10,7 @@ from django.utils.timezone import now
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
 from channels.layers import get_channel_layer
@@ -25,6 +26,15 @@ from .imap_sync import sync_mailbox
 
 # 同步超时（秒）
 SYNC_TIMEOUT = 45
+
+# 邮件列表分页
+EMAIL_PAGE_SIZE = 50
+
+
+class EmailPagination(PageNumberPagination):
+    page_size = EMAIL_PAGE_SIZE
+    page_size_query_param = 'page_size'
+    max_page_size = 200
 
 # 内部推送地址 — Daphne HTTP 端口
 INTERNAL_PUSH_URL = "http://127.0.0.1:9122/api/internal/push/"
@@ -179,6 +189,7 @@ class EmailViewSet(viewsets.ReadOnlyModelViewSet):
 
     queryset = EmailMessage.objects.select_related('mailbox').all()
     serializer_class = EmailListSerializer
+    pagination_class = EmailPagination
 
     def get_serializer_class(self):
         if self.action == 'retrieve':

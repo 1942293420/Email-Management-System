@@ -52,8 +52,8 @@ interface MailboxFormData {
   auth_token: string
 }
 
-const API_BASE = 'http://192.168.1.135:9122/api'
-const WS_URL = 'ws://192.168.1.135:9122/ws/events/'
+const API_BASE = '/api'
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/events/`
 
 export default function MailPage() {
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([])
@@ -112,8 +112,12 @@ export default function MailPage() {
   const fetchMailboxes = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/mailboxes/`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setMailboxes(await res.json())
-    } catch (e) { console.error('获取邮箱列表失败:', e) }
+    } catch (e) {
+      setToastMsg(`❌ 获取邮箱列表失败: ${e instanceof Error ? e.message : '网络错误'}`)
+      console.error('获取邮箱列表失败:', e)
+    }
   }, [])
 
   const fetchEmails = useCallback(async (mailboxId?: number) => {
@@ -121,8 +125,15 @@ export default function MailPage() {
     try {
       const params = mailboxId ? `?mailbox=${mailboxId}` : ''
       const res = await fetch(`${API_BASE}/emails/${params}`)
-      setEmails(await res.json())
-    } catch (e) { console.error('获取邮件列表失败:', e) }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      // DRF 分页后返回 {count, results, next, previous}
+      const emailList = Array.isArray(data) ? data : (data.results || [])
+      setEmails(emailList)
+    } catch (e) {
+      setToastMsg(`❌ 获取邮件列表失败: ${e instanceof Error ? e.message : '网络错误'}`)
+      console.error('获取邮件列表失败:', e)
+    }
     setLoading(false)
   }, [])
 
@@ -155,11 +166,13 @@ export default function MailPage() {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'new_email') {
+            // 新邮件通知：刷新列表 + toast，但不干预用户正在查看的邮件
             fetchEmails(mailboxRef.current ?? undefined);
             fetchSummary();
-            setToastMsg(`📬 [${msg.data.mailbox_name}] ${msg.data.count} 封新邮件`);
+            setToastMsg(`${msg.data.mailbox_name} ${msg.data.count} 封新邮件`);
           } else if (msg.type === 'sync_status') {
             if (msg.data.status === 'success') {
+              // 同步完成：刷新当前邮箱视图的邮件列表
               fetchEmails(mailboxRef.current ?? undefined);
               fetchSummary();
             }
@@ -236,11 +249,13 @@ export default function MailPage() {
     setSyncing(id)
     try {
       const res = await fetch(`${API_BASE}/mailboxes/${id}/sync/`, { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       if (data.error) { setToastMsg(`❌ ${getMailboxName(id)} 同步失败: ${data.error}`) }
       else if (data.new > 0) { setToastMsg(`✅ ${getMailboxName(id)} 同步成功，新增 ${data.new} 封邮件`) }
       else { setToastMsg(`✅ ${getMailboxName(id)} 同步完成，没有新邮件`) }
       fetchEmails(selectedMailbox ?? undefined)
+      fetchMailboxes()
       fetchSummary()
     } catch (e) { setToastMsg(`❌ ${getMailboxName(id)} 同步异常`); console.error('同步失败:', e) }
     setSyncing(null)
@@ -275,14 +290,20 @@ export default function MailPage() {
     setLoading(true)
     try {
       const res = await fetch(`${API_BASE}/emails/search/?q=${encodeURIComponent(searchQuery)}`)
-      setSearchResults(await res.json())
-    } catch (e) { console.error('搜索失败:', e) }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setSearchResults(Array.isArray(data) ? data : (data.results || []))
+    } catch (e) {
+      setToastMsg(`❌ 搜索失败: ${e instanceof Error ? e.message : '网络错误'}`)
+      console.error('搜索失败:', e)
+    }
     setLoading(false)
   }
 
   const handleSelectEmail = async (id: number) => {
     try {
       const res = await fetch(`${API_BASE}/emails/${id}/`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setSelectedEmail(data)
       if (!data.is_read) {
@@ -290,7 +311,10 @@ export default function MailPage() {
         fetchEmails(selectedMailbox ?? undefined)
         fetchSummary()
       }
-    } catch (e) { console.error('获取邮件详情失败:', e) }
+    } catch (e) {
+      setToastMsg(`❌ 获取邮件详情失败: ${e instanceof Error ? e.message : '网络错误'}`)
+      console.error('获取邮件详情失败:', e)
+    }
   }
 
   const toggleRead = async (email: EmailDetail) => {
