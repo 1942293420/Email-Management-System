@@ -1,0 +1,15 @@
+[Unit]
+Description=Hermes Email Platform (Django + Channels + WebSocket)
+After=network.target mysql.service redis-server.service
+Wants=mysql.service redis-server.service
+
+[Service]
+Type=simple
+User=jiangli
+WorkingDirectory=/home/jiangli/.hermes/email-server
+ExecStart=/usr/bin/daphne -b 0.0.0.0 -p 9122 -v 2 config.asgi:application
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

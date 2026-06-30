@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+db.sqlite3
+*.db
+.env
+.venv
+venv/
+*.sql
+*.pem
+*.key
+.Hermes/
+.hermes/
