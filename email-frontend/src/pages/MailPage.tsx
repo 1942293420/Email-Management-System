@@ -166,14 +166,13 @@ export default function MailPage() {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'new_email') {
-            // 新邮件通知：刷新列表 + toast，但不干预用户正在查看的邮件
-            fetchEmails(mailboxRef.current ?? undefined);
+            // 新邮件通知：只更新 summary 和 toast，不刷新列表
+            // 列表由 handleSync/handleSyncAll 的 HTTP 响应负责刷新
             fetchSummary();
             setToastMsg(`${msg.data.mailbox_name} ${msg.data.count} 封新邮件`);
           } else if (msg.type === 'sync_status') {
             if (msg.data.status === 'success') {
-              // 同步完成：刷新当前邮箱视图的邮件列表
-              fetchEmails(mailboxRef.current ?? undefined);
+              // 同步完成：只更新 summary，列表由 handleSync 的 HTTP 响应刷新
               fetchSummary();
             }
           }
